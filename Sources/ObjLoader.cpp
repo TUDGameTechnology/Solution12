@@ -1,4 +1,4 @@
-#include "pch.h"
+#include <Kore/pch.h>
 #include "ObjLoader.h"
 #include <Kore/IO/FileReader.h>
 #include <cstring>
@@ -82,7 +82,7 @@ namespace {
 		return countFirstCharLines(source, "vt ");
 	}
 
-	void parseVertex(Mesh* mesh, char* line) {
+	void parseVertex(Mesh* mesh) {
 		char* token;
 		for (int i = 0; i < 3; i++) {
 			token = strtok(nullptr, " ");
@@ -108,7 +108,7 @@ namespace {
 		mesh->vertices[(index * 8) + 7] = z;
 	}
 
-	void parseFace(Mesh* mesh, char* line) {
+	void parseFace(Mesh* mesh) {
 		char* token;
 		int verts[4];
 		int uvIndex[4];
@@ -168,7 +168,7 @@ namespace {
 		}
 	}
 
-	void parseUV(Mesh* mesh, char* line) {
+	void parseUV(Mesh* mesh) {
 		char* token;
 		for (int i = 0; i < 2; i++) {
 			token = strtok(nullptr, " ");
@@ -177,7 +177,7 @@ namespace {
 		}
 	}
 
-	void parseNormal(Mesh* mesh, char* line) {
+	void parseNormal(Mesh* mesh) {
 		char* token;
 		for (int i = 0; i < 3; i++) {
 			token = strtok(nullptr, " ");
@@ -190,16 +190,16 @@ namespace {
 		char* token = strtok(line, " ");
 		if (strcmp(token, "v") == 0) {
 			// Read some vertex data
-			parseVertex(mesh, line);
+			parseVertex(mesh);
 		}
 		else if (strcmp(token, "f") == 0) {
 			// Read some face data
-			parseFace(mesh, line);
+			parseFace(mesh);
 		}
 		else if (strcmp(token, "vt") == 0) {
-			parseUV(mesh, line);
+			parseUV(mesh);
 		} else if (strcmp(token, "vn") == 0) {
-			parseNormal(mesh, line);
+			parseNormal(mesh);
 		}
 
 		// Ignore all other commands (for now)	
