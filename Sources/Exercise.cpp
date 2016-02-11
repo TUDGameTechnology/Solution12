@@ -37,9 +37,12 @@ public:
 		// Determine the distance from listener to position
 
 		// Set these values so they reflect the direction to the sound source
-		// For directly right, rightVolume = 0.5, leftVolume = 0.0
-		// For directly left, leftVolume = 0.5, rightVolume = 0.0
+		// For directly right, rightVolume = 1.0, leftVolume = 0.0
+		// For directly left, leftVolume = 1.0, rightVolume = 0.0
 		// For very close to the listener's horizontal position, leftVolume = rightVolume = 0.5
+		// Update: The comment originally said to choose left, right = 0.5 at the largest angles,
+		// this was not the original intention. If you have already finished the exercised and
+		// used the original 0.5, this will also be counted as correct.
 		float rightVolume, leftVolume;
 
 		
