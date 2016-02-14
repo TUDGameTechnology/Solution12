@@ -44,11 +44,25 @@ public:
 		// this was not the original intention. If you have already finished the exercised and
 		// used the original 0.5, this will also be counted as correct.
 		float rightVolume, leftVolume;
+		vec3 lisToPos = position - listener;
+		float distance = lisToPos.getLength();
 
-		
-		
+		if (distance > 0.0001f) {
+			// set higher relative volume where the sound comes from (and proportionally lower on the other side)
+			lisToPos.normalize();
+			float cos = lisToPos.x();
+			rightVolume = (cos + 1) / 2;
+			leftVolume = 1 - rightVolume;
+		}
+		else {
+			// if the sound is where the listener is, he hears it evenly from both sides
+			rightVolume = 0.5;
+			leftVolume = 0.5;
+		}
+
+
 		Mixer::stop(&sound);
-		
+
 		// Modify sound data
 		// The arrays contain interleaved stereo data in signed 16 bit integer values
 		// Example - only plays on the right channel with half amplitude
@@ -56,17 +70,15 @@ public:
 		s16* source = (s16*)original;
 		s16* destination = (s16*)sound.data;
 		for (int i = 0; i < sound.size / 2; ++i) {
-			if (i % 2 == 0) { 
-				// Write the sample for the left channel
-				destination[i] = 0;
+			if (i % 2 == 0) { // test for left channel
+				destination[i] = static_cast<s16>(source[i] * leftVolume / exp(distance));
 			}
 			else {
-				// Write the sample for the right channel
-				destination[i] = source[i] / 2;
+				destination[i] = static_cast<s16>(source[i] * rightVolume / exp(distance));
 			}
 		}
-		
-		Mixer::play(&sound); 
+
+		Mixer::play(&sound);
 	}
 };
 
