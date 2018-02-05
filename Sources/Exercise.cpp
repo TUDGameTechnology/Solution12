@@ -4,9 +4,11 @@
 #include <Kore/System.h>
 #include <Kore/Input/Keyboard.h>
 #include <Kore/Input/Mouse.h>
-#include <Kore/Audio/Mixer.h>
-#include <Kore/Graphics/Image.h>
-#include <Kore/Graphics/Graphics.h>
+#include <Kore/Audio2/Audio.h>
+#include <Kore/Audio1/Audio.h>
+#include <Kore/Graphics1/Image.h>
+#include <Kore/Graphics4/Graphics.h>
+#include <Kore/Graphics4/PipelineState.h>
 #include <Kore/Math/Quaternion.h>
 #include "ObjLoader.h"
 
@@ -19,12 +21,15 @@ class DynamicSound {
 public:
 	
 	Sound sound;
-	u8* original;
+	s16* originalLeft;
+	s16* originalRight;
 
 	DynamicSound(const char* filename) : sound(filename) {
-		original = new u8[sound.size];
+		originalLeft = new s16[sound.size];
+		originalRight = new s16[sound.size];
 		for (int i = 0; i < sound.size; ++i) {
-			original[i] = sound.data[i];
+			originalLeft[i] = sound.left[i];
+			originalRight[i] = sound.right[i];
 		}
 	}
 	
@@ -60,37 +65,31 @@ public:
 		}
 
 
-		Mixer::stop(&sound);
+		Audio1::stop(&sound);
 
 		// Modify sound data
 		// The arrays contain interleaved stereo data in signed 16 bit integer values
 		// Example - only plays on the right channel with half amplitude
 		// Modify this code to use the values you computed above
-		s16* source = (s16*)original;
-		s16* destination = (s16*)sound.data;
-		for (int i = 0; i < sound.size / 2; ++i) {
-			if (i % 2 == 0) { // test for left channel
-				destination[i] = static_cast<s16>(source[i] * leftVolume / exp(distance));
-			}
-			else {
-				destination[i] = static_cast<s16>(source[i] * rightVolume / exp(distance));
-			}
+		for (int i = 0; i < sound.size; ++i) {
+			sound.left[i] = static_cast<s16>(originalLeft[i] * leftVolume / Kore::exp(distance));
+			sound.right[i] = static_cast<s16>(originalRight[i] * rightVolume / Kore::exp(distance));
 		}
 
-		Mixer::play(&sound);
+		Audio1::play(&sound);
 	}
 };
 
 class MeshObject {
 public:
-	MeshObject(const char* meshFile, const char* textureFile, const VertexStructure& structure, float scale = 1.0f) {
+	MeshObject(const char* meshFile, const char* textureFile, const Graphics4::VertexStructure& structure, float scale = 1.0f) {
 		mesh = loadObj(meshFile);
-		image = new Texture(textureFile, true);
+		image = new Graphics4::Texture(textureFile, true);
 		
 		minx = miny = minz = 9999999;
 		maxx = maxy = maxz = -9999999;
 		
-		vertexBuffer = new VertexBuffer(mesh->numVertices, structure, 0);
+		vertexBuffer = new Graphics4::VertexBuffer(mesh->numVertices, structure, 0);
 		float* vertices = vertexBuffer->lock();
 		for (int i = 0; i < mesh->numVertices; ++i) {
 			vertices[i * 8 + 0] = mesh->vertices[i * 8 + 0] * scale;
@@ -109,7 +108,7 @@ public:
 			vertices[i * 8 + 7] = mesh->vertices[i * 8 + 7];
 		}
 		vertexBuffer->unlock();
-		indexBuffer = new IndexBuffer(mesh->numFaces * 3);
+		indexBuffer = new Graphics4::IndexBuffer(mesh->numFaces * 3);
 		int* indices = indexBuffer->lock();
 		for (int i = 0; i < mesh->numFaces * 3; i++) {
 			indices[i] = mesh->indices[i];
@@ -118,11 +117,11 @@ public:
 		M = mat4::Identity();
 	}
 	
-	void render(TextureUnit tex) {
-		Graphics::setTexture(tex, image);
-		Graphics::setVertexBuffer(*vertexBuffer);
-		Graphics::setIndexBuffer(*indexBuffer);
-		Graphics::drawIndexedVertices();
+	void render(Graphics4::TextureUnit tex) {
+		Graphics4::setTexture(tex, image);
+		Graphics4::setVertexBuffer(*vertexBuffer);
+		Graphics4::setIndexBuffer(*indexBuffer);
+		Graphics4::drawIndexedVertices();
 	}
 	
 	virtual void update(float tdif) {
@@ -134,15 +133,15 @@ protected:
 	float minx, miny, minz;
 	float maxx, maxy, maxz;
 private:
-	VertexBuffer* vertexBuffer;
-	IndexBuffer* indexBuffer;
+	Graphics4::VertexBuffer* vertexBuffer;
+	Graphics4::IndexBuffer* indexBuffer;
 	Mesh* mesh;
-	Texture* image;
+	Graphics4::Texture* image;
 };
 
 class Ball : public MeshObject {
 public:
-	Ball(float x, float y, float z, const VertexStructure& structure, float scale = 1.0f) : MeshObject("ball.obj", "unshaded.png", structure, scale), x(x), y(y), z(z), dir(0, 0, 0), sound("untitled.wav") {
+	Ball(float x, float y, float z, const Graphics4::VertexStructure& structure, float scale = 1.0f) : MeshObject("ball.obj", "unshaded.png", structure, scale), x(x), y(y), z(z), dir(0, 0, 0), sound("untitled.wav") {
 		rotation = Quaternion(vec3(0, 0, 1), 0);
 	}
 	
@@ -194,48 +193,47 @@ namespace {
 	const int width = 1024;
 	const int height = 768;
 	double startTime;
-	Shader* vertexShader;
-	Shader* fragmentShader;
-	Program* program;
+	Graphics4::Shader* vertexShader;
+	Graphics4::Shader* fragmentShader;
+	Graphics4::PipelineState* pipeline;
 	MeshObject* objects[] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 	Ball* balls[] = { nullptr, nullptr };
-	TextureUnit tex;
-	ConstantLocation pvLocation;
-	ConstantLocation mLocation;
+	Graphics4::TextureUnit tex;
+	Graphics4::ConstantLocation pvLocation;
+	Graphics4::ConstantLocation mLocation;
 	mat4 PV;
 	float lastTime = 0;
-	vec3 position(0, 2, -3);
+	vec3 position(0, 1.75f, -1.25f);
 	float lastSoundTime = 0;
 	
 	void update() {
 		float t = (float)(System::time() - startTime);
 		float tdif = t - lastTime;
 		lastTime = t;
-		
+
 		updateBall();
-		
+
 		if (t > lastSoundTime) {
 			balls[1]->playSound(vec3(balls[0]->x, balls[0]->y, balls[0]->z));
 			lastSoundTime += 0.5;
 		}
-		
-		Kore::Audio::update();
-		Graphics::begin();
-		Graphics::clear(Graphics::ClearColorFlag | Graphics::ClearDepthFlag, 0xff9999FF, 1000.0f);
-		program->set();
-		PV = mat4::Perspective(60, (float)width / (float)height, 0.1f, 100) * mat4::lookAt(position, vec3(position.x(), position.y(), position.z() + 10.0f), vec3(0, 1, 0));
-		Graphics::setMatrix(pvLocation, PV);
-		
+
+		Graphics4::begin();
+		Graphics4::clear(Graphics4::ClearColorFlag | Graphics4::ClearDepthFlag, 0xff9999FF, 1000.0f);
+		Graphics4::setPipeline(pipeline);
+		PV = mat4::Perspective(90, (float)width / (float)height, 0.1f, 100) * mat4::lookAt(position, vec3(0.0, 1.75f, 0.0), vec3(0, 1, 0));
+		Graphics4::setMatrix(pvLocation, PV);
+
 		MeshObject** current = &objects[0];
 		while (*current != nullptr) {
 			(*current)->update(tdif);
-			Graphics::setMatrix(mLocation, (*current)->M);
+			Graphics4::setMatrix(mLocation, (*current)->M);
 			(*current)->render(tex);
 			++current;
 		}
-		
-		Graphics::end();
-		Graphics::swapBuffers();
+
+		Graphics4::end();
+		Graphics4::swapBuffers();
 	}
 	
 	bool left = false, right = false, up = false, down = false;
@@ -268,32 +266,32 @@ namespace {
 		}
 	}
 	
-	void keyDown(KeyCode code, wchar_t character) {
-		if (code == Key_Left) {
+	void keyDown(KeyCode code) {
+		if (code == KeyLeft) {
 			left = true;
 		}
-		else if (code == Key_Right) {
+		else if (code == KeyRight) {
 			right = true;
 		}
-		else if (code == Key_Up) {
+		else if (code == KeyUp) {
 			up = true;
 		}
-		else if (code == Key_Down) {
+		else if (code == KeyDown) {
 			down = true;
 		}
 	}
 	
-	void keyUp(KeyCode code, wchar_t character) {
-		if (code == Key_Left) {
+	void keyUp(KeyCode code) {
+		if (code == KeyLeft) {
 			left = false;
 		}
-		else if (code == Key_Right) {
+		else if (code == KeyRight) {
 			right = false;
 		}
-		else if (code == Key_Up) {
+		else if (code == KeyUp) {
 			up = false;
 		}
-		else if (code == Key_Down) {
+		else if (code == KeyDown) {
 			down = false;
 		}
 	}
@@ -312,74 +310,54 @@ namespace {
 	
 	void init() {
 		srand(42);
-		
+
 		FileReader vs("shader.vert");
 		FileReader fs("shader.frag");
-		vertexShader = new Shader(vs.readAll(), vs.size(), VertexShader);
-		fragmentShader = new Shader(fs.readAll(), fs.size(), FragmentShader);
-		
+		vertexShader = new Graphics4::Shader(vs.readAll(), vs.size(), Graphics4::VertexShader);
+		fragmentShader = new Graphics4::Shader(fs.readAll(), fs.size(), Graphics4::FragmentShader);
+
 		// This defines the structure of your Vertex Buffer
-		VertexStructure structure;
-		structure.add("pos", Float3VertexData);
-		structure.add("tex", Float2VertexData);
-		structure.add("nor", Float3VertexData);
-		
-		program = new Program;
-		program->setVertexShader(vertexShader);
-		program->setFragmentShader(fragmentShader);
-		program->link(structure);
-		
-		tex = program->getTextureUnit("tex");
-		pvLocation = program->getConstantLocation("PV");
-		mLocation = program->getConstantLocation("M");
-		
+		Graphics4::VertexStructure structure;
+		structure.add("pos", Graphics4::Float3VertexData);
+		structure.add("tex", Graphics4::Float2VertexData);
+		structure.add("nor", Graphics4::Float3VertexData);
+
+		pipeline = new Graphics4::PipelineState;
+		pipeline->inputLayout[0] = &structure;
+		pipeline->inputLayout[1] = nullptr;
+		pipeline->vertexShader = vertexShader;
+		pipeline->fragmentShader = fragmentShader;
+		pipeline->depthMode = Graphics4::ZCompareLess;
+		pipeline->depthWrite = true;
+		pipeline->compile();
+
+		tex = pipeline->getTextureUnit("tex");
+		pvLocation = pipeline->getConstantLocation("PV");
+		mLocation = pipeline->getConstantLocation("M");
+
 		objects[0] = balls[0] = new Ball(0.0f, 1.0f, 0.0f, structure, 3);
-		objects[1] = balls[1] = new Ball(((float)rand() / RAND_MAX)*2-1, 4.0f, 0.0f, structure, 3);
+		objects[1] = balls[1] = new Ball(((float)rand() / RAND_MAX) * 2 - 1, 4.0f, 0.0f, structure, 3);
 		objects[2] = new MeshObject("base.obj", "floor.png", structure);
 		objects[2]->M = mat4::RotationX(3.1415f / 2.0f)*mat4::Scale(0.15f, 1, 1);
 		objects[3] = new MeshObject("base.obj", "StarMap.png", structure);
 		objects[3]->M = mat4::RotationX(3.1415f / 2.0f)*mat4::Scale(1, 1, 1)*mat4::Translation(0, 0, 0.5f);
 
-		
-		Graphics::setRenderState(DepthTest, true);
-		Graphics::setRenderState(DepthTestCompare, ZCompareLess);
-		Graphics::setTextureAddressing(tex, U, Repeat);
-		Graphics::setTextureAddressing(tex, V, Repeat);
+		Graphics4::setTextureAddressing(tex, Graphics4::U, Graphics4::Repeat);
+		Graphics4::setTextureAddressing(tex, Graphics4::V, Graphics4::Repeat);
 	}
 }
 
 int kore(int argc, char** argv) {
-
-	Kore::System::setName("TUD Game Technology - ");
-	Kore::System::setup();
-	Kore::WindowOptions options;
-	options.title = "Solution 13 - ";
-	options.width = width;
-	options.height = height;
-	options.x = 100;
-	options.y = 100;
-	options.targetDisplay = -1;
-	options.mode = WindowModeWindow;
-	options.rendererOptions.depthBufferBits = 16;
-	options.rendererOptions.stencilBufferBits = 8;
-	options.rendererOptions.textureFormat = 0;
-	options.rendererOptions.antialiasing = 0;
-	Kore::System::initWindow(options);
-
+	Kore::System::init("Solution 12", width, height);
 	init();
-
 	Kore::System::setCallback(update);
 
-	Kore::Mixer::init();
-	Kore::Audio::init();
-
-
 	startTime = System::time();
-
+	Kore::Audio1::init();
+	Kore::Audio2::init();
 
 	Keyboard::the()->KeyDown = keyDown;
 	Keyboard::the()->KeyUp = keyUp;
-
 	Mouse::the()->Move = mouseMove;
 	Mouse::the()->Press = mousePress;
 	Mouse::the()->Release = mouseRelease;
